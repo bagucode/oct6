@@ -6,6 +6,9 @@
 #include <string.h>
 #include <assert.h>
 
+// TODO: Error type
+// TODO: make interpreter functions return void, should use stack!
+
 // Runtime types
 typedef struct sRuntime Runtime;
 typedef struct sContext Context;
@@ -121,6 +124,7 @@ struct sList {
 };
 
 struct sFunction {
+  char* name;
   char isBuiltIn;
   union {
     BuiltInFn builtIn;
@@ -517,6 +521,9 @@ static Object* FunctionPrint(Context* ctx) {
   if(!FunctionP(o)) {
     abort(); // TODO: return error
   }
+  Function* f = ObjectGetDataPtr(o);
+  printf("#<Function [%s]>", f->name);
+  return NULL;
 }
 
 static Function fFunctionPrint;
@@ -535,6 +542,7 @@ static void initBuiltins() {
   tNumber.fields = NULL;
   tNumber.name = "Number";
   tNumber.deleteFn = NULL;
+  fNumberPrint.name = "number-print";
   fNumberPrint.isBuiltIn = 1;
   fNumberPrint.builtIn = &NumberPrint;
   tNumber.printFn = &fNumberPrint;
@@ -544,9 +552,11 @@ static void initBuiltins() {
   tSymbol.size = sizeof(Symbol);
   tSymbol.fields = NULL;
   tSymbol.name = "Symbol";
+  fSymbolDelete.name = "symbol-delete";
   fSymbolDelete.isBuiltIn = 1;
   fSymbolDelete.builtIn = &SymbolDelete;
   tSymbol.deleteFn = &fSymbolDelete;
+  fSymbolPrint.name = "symbol-print";
   fSymbolPrint.isBuiltIn = 1;
   fSymbolPrint.builtIn = &SymbolPrint;
   tSymbol.printFn = &fSymbolPrint;
@@ -557,6 +567,7 @@ static void initBuiltins() {
   tList.fields = NULL;
   tList.name = "List";
   tList.deleteFn = NULL;
+  fListPrint.name = "list-print";
   fListPrint.isBuiltIn = 1;
   fListPrint.builtIn = &ListPrint;
   tList.printFn = &fListPrint;
@@ -567,6 +578,7 @@ static void initBuiltins() {
   tFunction.fields = NULL;
   tFunction.name = "Function";
   tFunction.deleteFn = NULL;
+  fFunctionPrint.name = "function-print";
   fFunctionPrint.isBuiltIn = 1;
   fFunctionPrint.builtIn = &FunctionPrint;
   tFunction.printFn = &fFunctionPrint;
@@ -835,6 +847,30 @@ static Object* ReaderRead(Context* ctx, Reader* r) {
     return NULL;
   }
   return ReaderReadInternal(ctx, r);
+}
+
+// Returns previous value, or NULL if none
+static Object* EnvironmentBind(Context* ctx) {
+  Object* obj = StackPop(ctx->stack);
+  Object* sym = StackPop(ctx->stack);
+  if(!SymbolP(sym)) {
+    abort(); // TODO: error
+  }
+  for(unsigned int i = 0; i < ctx->environment->bindingsListSize; ++i) {
+    if(ctx->environment->names[i] == NULL) {
+      Symbol* nameSym = ObjectGetDataPtr(sym);
+      unsigned int nameSize = strlen(nameSym->name);
+      ctx->environment->names[i] = malloc(nameSize + 1);
+      if(!ctx->environment->names[i]) {
+        abort(); // TODO: error
+      }
+      memcpy(ctx->environment->names[i], nameSym->name, nameSize);
+      ctx->environment->names[i][nameSize] = 0;
+      ctx->environment->objects[i] = obj;
+      return NULL;
+    }
+#error    WIP HERE
+  }
 }
 
 // Entry point
