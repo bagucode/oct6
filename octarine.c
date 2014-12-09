@@ -70,7 +70,6 @@ struct sContext {
 };
 
 struct sEnvironment {
-  unsigned int nBindings;
   unsigned int bindingsListSize;
   char** names;
   Object** objects;
@@ -268,7 +267,6 @@ static Environment* EnvironmentNew(Environment* parent) {
   }
 
   env->parent = parent;
-  env->nBindings = 0;
   env->bindingsListSize = 100;
 
   env->names = (char**)malloc(sizeof(char*) * env->bindingsListSize);
@@ -808,20 +806,24 @@ static Object* readList(Context* ctx, const char* token, Reader* r) {
 
 static Object* readFunction(Context* ctx, const char* token, Reader* r);
 
-static Object* readSymbol(Context* ctx, const char* token) {
+static Object* SymbolNew(Context* ctx, const char* name) {
   Object* symObj = ObjectAllocRaw(ctx, &tSymbol);
   if(!symObj) {
     abort(); // TODO: return error
   }
   Symbol* sym = ObjectGetDataPtr(symObj);
-  unsigned int len = strlen(token);
+  unsigned int len = strlen(name);
   sym->name = malloc(len + 1);
   if(!sym->name) {
     abort(); // TODO: return error
   }
-  memcpy(sym->name, token, len);
+  memcpy(sym->name, name, len);
   sym->name[len] = 0;
   return symObj;
+}
+
+static Object* readSymbol(Context* ctx, const char* token) {
+  return SymbolNew(ctx, token);
 }
 
 static Object* ReaderReadInternal(Context* ctx, Reader* r) {
@@ -856,21 +858,49 @@ static Object* EnvironmentBind(Context* ctx) {
   if(!SymbolP(sym)) {
     abort(); // TODO: error
   }
+  unsigned int freeSlot = 0;
+  char hasFree = 0;
+  Symbol* nameSym = ObjectGetDataPtr(sym);
   for(unsigned int i = 0; i < ctx->environment->bindingsListSize; ++i) {
-    if(ctx->environment->names[i] == NULL) {
-      Symbol* nameSym = ObjectGetDataPtr(sym);
-      unsigned int nameSize = strlen(nameSym->name);
-      ctx->environment->names[i] = malloc(nameSize + 1);
-      if(!ctx->environment->names[i]) {
-        abort(); // TODO: error
-      }
-      memcpy(ctx->environment->names[i], nameSym->name, nameSize);
-      ctx->environment->names[i][nameSize] = 0;
-      ctx->environment->objects[i] = obj;
-      return NULL;
+    if(!hasFree && ctx->environment->names[i] == NULL) {
+      hasFree = 1;
+      freeSlot = i;
     }
-#error    WIP HERE
+    if(ctx->environment->names[i] &&
+       strcmp(ctx->environment->names[i], nameSym->name) == 0) {
+      Object* previous = ctx->environment->objects[i];
+      ctx->environment->objects[i] = obj;
+      return previous;
+    }
   }
+  if(!hasFree) {
+    unsigned int newBindingsSize = ctx->environment->bindingsListSize * 2;
+    char** newNames = realloc(ctx->environment->names, newBindingsSize * sizeof(char*));
+    if(!newNames) {
+      abort(); // TODO: error
+    }
+    for(unsigned int i = ctx->environment->bindingsListSize; i < newBindingsSize; ++i) {
+      newNames[i] = NULL;
+    }
+    Object** newObjects = realloc(ctx->environment->objects, newBindingsSize * sizeof(Object*));
+    if(!newObjects) {
+      abort(); // TODO: error
+    }
+    hasFree = 1;
+    freeSlot = ctx->environment->bindingsListSize;
+    ctx->environment->bindingsListSize = newBindingsSize;
+    ctx->environment->names = newNames;
+    ctx->environment->objects = newObjects;
+  }
+  unsigned int nameLen = strlen(nameSym->name);
+  ctx->environment->names[freeSlot] = malloc(nameLen + 1);
+  if(!ctx->environment->names[freeSlot]) {
+    abort(); // TODO: error
+  }
+  memcpy(ctx->environment->names[freeSlot], nameSym->name, nameLen);
+  ctx->environment->names[freeSlot][nameLen] = 0;
+  ctx->environment->objects[freeSlot] = obj;
+  return NULL;
 }
 
 // Entry point
