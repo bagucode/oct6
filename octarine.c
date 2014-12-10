@@ -43,6 +43,7 @@ struct sType {
   char* name;
   Function* deleteFn;
   Function* printFn;
+  Function* evalFn;
   unsigned int nFields;
   Type** fields;
 };
@@ -457,8 +458,18 @@ static Object* SymbolPrint(Context* ctx) {
   return NULL;
 }
 
+/* static Object* SymbolEval(Context* ctx) { */
+/*   Object* o = StackPop(ctx->stack); */
+/*   if(!SymbolP(o)) { */
+/*     abort(); // TODO: error */
+/*   } */
+/*   Symbol* s = ObjectGetDataPtr(o); */
+  
+/* } */
+
 static Function fSymbolDelete;
 static Function fSymbolPrint;
+static Function fSymbolEval;
 
 static int NumberP(Object* o) {
   return o->type == &tNumber;
@@ -540,6 +551,7 @@ static void initBuiltins() {
   tNumber.fields = NULL;
   tNumber.name = "Number";
   tNumber.deleteFn = NULL;
+  tNumber.evalFn = NULL;
   fNumberPrint.name = "number-print";
   fNumberPrint.isBuiltIn = 1;
   fNumberPrint.builtIn = &NumberPrint;
@@ -559,6 +571,8 @@ static void initBuiltins() {
   fSymbolPrint.builtIn = &SymbolPrint;
   tSymbol.printFn = &fSymbolPrint;
 
+  tSymbol.evalFn = NULL;
+
   tList.alignment = sizeof(void*);
   tList.nFields = 0;
   tList.size = sizeof(List);
@@ -570,6 +584,8 @@ static void initBuiltins() {
   fListPrint.builtIn = &ListPrint;
   tList.printFn = &fListPrint;
 
+  tList.evalFn = NULL;
+
   tFunction.alignment = sizeof(void*);
   tFunction.nFields = 0;
   tFunction.size = sizeof(Function);
@@ -580,6 +596,8 @@ static void initBuiltins() {
   fFunctionPrint.isBuiltIn = 1;
   fFunctionPrint.builtIn = &FunctionPrint;
   tFunction.printFn = &fFunctionPrint;
+
+  tFunction.evalFn = NULL;
 }
 
 static Runtime* RuntimeNew(StreamType inputType, const char* strOrFileName) {
@@ -851,23 +869,21 @@ static Object* ReaderRead(Context* ctx, Reader* r) {
   return ReaderReadInternal(ctx, r);
 }
 
+/* static Object* EnvironmentGet(Context* ctx) { */
+  
+/* } */
+
 // Returns previous value, or NULL if none
-static Object* EnvironmentBind(Context* ctx) {
-  Object* obj = StackPop(ctx->stack);
-  Object* sym = StackPop(ctx->stack);
-  if(!SymbolP(sym)) {
-    abort(); // TODO: error
-  }
+static Object* EnvironmentBind(Context* ctx, Symbol* name, Object* obj) {
   unsigned int freeSlot = 0;
   char hasFree = 0;
-  Symbol* nameSym = ObjectGetDataPtr(sym);
   for(unsigned int i = 0; i < ctx->environment->bindingsListSize; ++i) {
     if(!hasFree && ctx->environment->names[i] == NULL) {
       hasFree = 1;
       freeSlot = i;
     }
     if(ctx->environment->names[i] &&
-       strcmp(ctx->environment->names[i], nameSym->name) == 0) {
+       strcmp(ctx->environment->names[i], name->name) == 0) {
       Object* previous = ctx->environment->objects[i];
       ctx->environment->objects[i] = obj;
       return previous;
@@ -892,12 +908,12 @@ static Object* EnvironmentBind(Context* ctx) {
     ctx->environment->names = newNames;
     ctx->environment->objects = newObjects;
   }
-  unsigned int nameLen = strlen(nameSym->name);
+  unsigned int nameLen = strlen(name->name);
   ctx->environment->names[freeSlot] = malloc(nameLen + 1);
   if(!ctx->environment->names[freeSlot]) {
     abort(); // TODO: error
   }
-  memcpy(ctx->environment->names[freeSlot], nameSym->name, nameLen);
+  memcpy(ctx->environment->names[freeSlot], name->name, nameLen);
   ctx->environment->names[freeSlot][nameLen] = 0;
   ctx->environment->objects[freeSlot] = obj;
   return NULL;
@@ -928,6 +944,11 @@ int main(int argc, char* argv[]) {
   Reader* r = ctx->reader;
   Object* o = ReaderRead(ctx, r);
   while(o) {
+    if(o->type->evalFn && o->type->evalFn->isBuiltIn) {
+      StackPush(ctx->stack, o);
+      o->type->evalFn->builtIn(ctx);
+      o = StackPop(ctx->stack);
+    }
     if(o->type->printFn && o->type->printFn->isBuiltIn) {
       StackPush(ctx->stack, o);
       o->type->printFn->builtIn(ctx);
