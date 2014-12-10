@@ -546,13 +546,49 @@ static void ListPrint(Context* ctx) {
   fputc(')', stdout);
 }
 
+static int ListEmpty(List* lst) {
+  return lst->next == NULL && lst->value == NULL;
+}
+
+static Object* ListFirst(List* lst) {
+  return lst->value;
+}
+
+static Object* ListRest(List* lst) {
+  return lst->next;
+}
+
 static void ListEval(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!ListP(o)) {
     ErrorPushUnexpectedType(ctx);
     return;
   }
-  // WIP
+  List* l = ObjectGetDataPtr(o);
+  if (ListEmpty(l)) {
+    StackPush(ctx, o); // empty list evals to itself
+    return;
+  }
+  Object* first = ListFirst(l);
+  if (!first) {
+    StackPush(ctx, ErrorNew(ctx, "Cannot eval nil"));
+    return;
+  }
+  if (first->info.type->evalFn != NULL) {
+    if (first->info.type->evalFn->isBuiltIn) {
+      StackPush(ctx, first);
+      first->info.type->evalFn->builtIn(ctx);
+      first = StackPop(ctx);
+    }
+    else {
+      abort(); // todo: handle eval of non built in functions
+    }
+  }
+  if (!FunctionP(first)) {
+    StackPush(ctx, ErrorNew(ctx, "List head did not evaluate to a function"));
+    return;
+  }
+#error WIP
 }
 
 static Function fListPrint;
