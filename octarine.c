@@ -458,14 +458,16 @@ static Object* SymbolPrint(Context* ctx) {
   return NULL;
 }
 
-/* static Object* SymbolEval(Context* ctx) { */
-/*   Object* o = StackPop(ctx->stack); */
-/*   if(!SymbolP(o)) { */
-/*     abort(); // TODO: error */
-/*   } */
-/*   Symbol* s = ObjectGetDataPtr(o); */
-  
-/* } */
+static Object* EnvironmentGet(Context* ctx, Symbol* name);
+
+static Object* SymbolEval(Context* ctx) {
+  Object* o = StackPop(ctx->stack);
+  if(!SymbolP(o)) {
+    abort(); // TODO: error
+  }
+  Symbol* s = ObjectGetDataPtr(o);
+  return EnvironmentGet(ctx, s);
+}
 
 static Function fSymbolDelete;
 static Function fSymbolPrint;
@@ -545,59 +547,76 @@ static void initBuiltins() {
   }
   initDone = 1;
 
+  // Number
+
   tNumber.alignment = sizeof(double);
   tNumber.nFields = 0;
   tNumber.size = sizeof(Number);
   tNumber.fields = NULL;
   tNumber.name = "Number";
+
   tNumber.deleteFn = NULL;
   tNumber.evalFn = NULL;
+
   fNumberPrint.name = "number-print";
   fNumberPrint.isBuiltIn = 1;
   fNumberPrint.builtIn = &NumberPrint;
   tNumber.printFn = &fNumberPrint;
+
+  // Symbol
 
   tSymbol.alignment = sizeof(void*);
   tSymbol.nFields = 0;
   tSymbol.size = sizeof(Symbol);
   tSymbol.fields = NULL;
   tSymbol.name = "Symbol";
+
   fSymbolDelete.name = "symbol-delete";
   fSymbolDelete.isBuiltIn = 1;
   fSymbolDelete.builtIn = &SymbolDelete;
   tSymbol.deleteFn = &fSymbolDelete;
+
   fSymbolPrint.name = "symbol-print";
   fSymbolPrint.isBuiltIn = 1;
   fSymbolPrint.builtIn = &SymbolPrint;
   tSymbol.printFn = &fSymbolPrint;
 
-  tSymbol.evalFn = NULL;
+  fSymbolEval.name = "symbol-eval";
+  fSymbolEval.isBuiltIn = 1;
+  fSymbolEval.builtIn = &SymbolEval;
+  tSymbol.evalFn = &fSymbolEval;
+
+  // List
 
   tList.alignment = sizeof(void*);
   tList.nFields = 0;
   tList.size = sizeof(List);
   tList.fields = NULL;
   tList.name = "List";
+
   tList.deleteFn = NULL;
+  tList.evalFn = NULL;
+
   fListPrint.name = "list-print";
   fListPrint.isBuiltIn = 1;
   fListPrint.builtIn = &ListPrint;
   tList.printFn = &fListPrint;
 
-  tList.evalFn = NULL;
+  // Function
 
   tFunction.alignment = sizeof(void*);
   tFunction.nFields = 0;
   tFunction.size = sizeof(Function);
   tFunction.fields = NULL;
   tFunction.name = "Function";
+
   tFunction.deleteFn = NULL;
+  tFunction.evalFn = NULL;
+
   fFunctionPrint.name = "function-print";
   fFunctionPrint.isBuiltIn = 1;
   fFunctionPrint.builtIn = &FunctionPrint;
   tFunction.printFn = &fFunctionPrint;
-
-  tFunction.evalFn = NULL;
 }
 
 static Runtime* RuntimeNew(StreamType inputType, const char* strOrFileName) {
@@ -822,8 +841,6 @@ static Object* readList(Context* ctx, const char* token, Reader* r) {
   return headObj;
 }
 
-static Object* readFunction(Context* ctx, const char* token, Reader* r);
-
 static Object* SymbolNew(Context* ctx, const char* name) {
   Object* symObj = ObjectAllocRaw(ctx, &tSymbol);
   if(!symObj) {
@@ -850,9 +867,6 @@ static Object* ReaderReadInternal(Context* ctx, Reader* r) {
   if(!result) {
     result = readList(ctx, token, r);
   }
-  //if(!result) {
-  //  result = readFunction(ctx, token, r);
-  //}
   if(!result) {
     result = readSymbol(ctx, token);
   }
@@ -869,9 +883,14 @@ static Object* ReaderRead(Context* ctx, Reader* r) {
   return ReaderReadInternal(ctx, r);
 }
 
-/* static Object* EnvironmentGet(Context* ctx) { */
-  
-/* } */
+static Object* EnvironmentGet(Context* ctx, Symbol* name) {
+  for(unsigned int i = 0; i < ctx->environment->bindingsListSize; ++i) {
+    if(ctx->environment->names[i] && strcmp(ctx->environment->names[i], name->name) == 0) {
+      return ctx->environment->objects[i];
+    }
+  }
+  return NULL;
+}
 
 // Returns previous value, or NULL if none
 static Object* EnvironmentBind(Context* ctx, Symbol* name, Object* obj) {
@@ -946,10 +965,12 @@ int main(int argc, char* argv[]) {
   while(o) {
     if(o->type->evalFn && o->type->evalFn->isBuiltIn) {
       StackPush(ctx->stack, o);
-      o->type->evalFn->builtIn(ctx);
-      o = StackPop(ctx->stack);
+      o = o->type->evalFn->builtIn(ctx);
     }
-    if(o->type->printFn && o->type->printFn->isBuiltIn) {
+    if(!o) {
+      puts("nil");
+    }
+    else if(o->type->printFn && o->type->printFn->isBuiltIn) {
       StackPush(ctx->stack, o);
       o->type->printFn->builtIn(ctx);
       putc('\n', stdout);
