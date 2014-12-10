@@ -549,9 +549,10 @@ static void ListPrint(Context* ctx) {
 static void ListEval(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!ListP(o)) {
-    abort();
+    ErrorPushUnexpectedType(ctx);
+    return;
   }
-  // wip here
+  // WIP
 }
 
 static Function fListPrint;
@@ -792,8 +793,8 @@ static int TokenizerNext(Context* ctx, Tokenizer* tokenizer, const char** token)
   const char delims [] = "()[]{}"; // 6
 
   if (StreamEnd(tokenizer->stream)) {
-    return 1;
     (*token) = NULL;
+    return 1;
   }
 
   unsigned int pos = 0;
@@ -894,6 +895,9 @@ static Object* readList(Context* ctx, const char* token, Reader* r) {
   if (!TokenizerNext(ctx, r->tokenizer, &token)) {
     return StackPop(ctx);
   }
+  if (!token) {
+    return NULL;
+  }
   Object* headObj = ObjectAllocRaw(ctx, &tList);
   if (ErrorP(headObj)) {
     return headObj;
@@ -918,6 +922,9 @@ static Object* readList(Context* ctx, const char* token, Reader* r) {
     lst->value = value;
     if (!TokenizerNext(ctx, r->tokenizer, &token)) {
       return StackPop(ctx);
+    }
+    if (!token) {
+      return ErrorNew(ctx, "Unexpected end of input");
     }
   }
   return headObj;
