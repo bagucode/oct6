@@ -58,6 +58,7 @@ struct sType {
   Function* deleteFn;
   Function* printFn;
   Function* evalFn;
+  Function* applyFn;
   unsigned int nFields;
   Type** fields;
 };
@@ -571,7 +572,9 @@ static void ListEval(Context* ctx) {
   }
   Object* first = ListFirst(l);
   if (!first) {
-    StackPush(ctx, ErrorNew(ctx, "Cannot eval nil"));
+    // TODO: Change? This is a weird case. Should use a Nothing type for nil and introduce variant types. \
+    It is currently impossible to distinguish between "no value" and an intentional nil.
+    StackPush(ctx, ErrorNew(ctx, "Cannot apply nil"));
     return;
   }
   if (first->info.type->evalFn != NULL) {
@@ -581,14 +584,30 @@ static void ListEval(Context* ctx) {
       first = StackPop(ctx);
     }
     else {
-      abort(); // todo: handle eval of non built in functions
+      abort(); // TODO: handle eval of non built in functions
     }
   }
-  if (!FunctionP(first)) {
-    StackPush(ctx, ErrorNew(ctx, "List head did not evaluate to a function"));
+  if (!first->info.type->applyFn) {
+    size_t bufsize = strlen(first->info.type->name);
+    bufsize += sizeof("Cannot apply  ");
+    char* buf = malloc(bufsize);
+    if (!buf) {
+      StackPush(ctx, &eOOM);
+      return;
+    }
+    sprintf(buf, "Cannot apply %s", first->info.type->name);
+    StackPush(ctx, ErrorNew(ctx, buf));
+    free(buf);
     return;
   }
-#error WIP
+  StackPush(ctx, ListRest(l));
+  StackPush(ctx, first);
+  if (first->info.type->applyFn->isBuiltIn) {
+    first->info.type->applyFn->builtIn(ctx);
+  }
+  else {
+    abort(); // TODO: handle non built in functions
+  }
 }
 
 static Function fListPrint;
@@ -608,7 +627,16 @@ static void FunctionPrint(Context* ctx) {
   printf("#<Function [%s]>", f->name);
 }
 
+static void FunctionApply(Context* ctx) {
+  Object* o = StackPop(ctx);
+  if (ErrorP(o)) {
+    return o
+  }
+
+}
+
 static Function fFunctionPrint;
+static Function fFunctionApply;
 
 static int ErrorP(Object* o) {
   return o->info.type == &tError;
@@ -654,6 +682,7 @@ static void initBuiltins() {
   tError.fields = NULL;
   tError.name = "Error";
   tError.evalFn = NULL;
+  tError.applyFn = NULL;
 
   fErrorDelete.name = "error-delete";
   fErrorDelete.isBuiltIn = 1;
@@ -675,6 +704,7 @@ static void initBuiltins() {
 
   tNumber.deleteFn = NULL;
   tNumber.evalFn = NULL;
+  tNumber.applyFn = NULL;
 
   fNumberPrint.name = "number-print";
   fNumberPrint.isBuiltIn = 1;
@@ -688,6 +718,8 @@ static void initBuiltins() {
   tSymbol.size = sizeof(Symbol);
   tSymbol.fields = NULL;
   tSymbol.name = "Symbol";
+
+  tSymbol.applyFn = NULL;
 
   fSymbolDelete.name = "symbol-delete";
   fSymbolDelete.isBuiltIn = 1;
@@ -714,6 +746,7 @@ static void initBuiltins() {
 
   tList.deleteFn = NULL;
   tList.evalFn = NULL;
+  tList.applyFn = NULL;
 
   fListPrint.name = "list-print";
   fListPrint.isBuiltIn = 1;
@@ -735,6 +768,8 @@ static void initBuiltins() {
   fFunctionPrint.isBuiltIn = 1;
   fFunctionPrint.builtIn = &FunctionPrint;
   tFunction.printFn = &fFunctionPrint;
+
+
 }
 
 static Runtime* RuntimeNew(StreamType inputType, const char* strOrFileName) {
