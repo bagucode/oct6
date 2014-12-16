@@ -630,8 +630,14 @@ static void FunctionPrint(Context* ctx) {
 static void FunctionApply(Context* ctx) {
   Object* o = StackPop(ctx);
   if (ErrorP(o)) {
-    return o
+    StackPush(ctx, o);
+    return;
   }
+  if (!FunctionP(o)) {
+    ErrorPushUnexpectedType(ctx);
+  }
+  Function* f = ObjectGetDataPtr(o);
+  
 
 }
 
