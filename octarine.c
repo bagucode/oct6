@@ -15,6 +15,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <assert.h>
+#include <setjmp.h>
 
 // Runtime types
 typedef struct sRuntime Runtime;
@@ -83,6 +84,10 @@ struct sContext {
   Stack* stack;
   Object* lastObject;
   Reader* reader;
+  Object* error;
+  Object** unwindActions;
+  unsigned int numUnwindActions;
+  jmp_buf jmpBuf;
 };
 
 struct sEnvironment {
@@ -366,6 +371,9 @@ static Context* ContextNew(Runtime* rt, StreamType inputType, const char* strOrF
   ctx->runtime = rt;
   ctx->lastObject = NULL;
   ctx->stack = NULL;
+  ctx->error = NULL;
+  ctx->unwindActions = NULL;
+  ctx->numUnwindActions = 0;
 
   ctx->environment = EnvironmentNew(rt->environment);
   if (!ctx->environment) {
@@ -382,12 +390,19 @@ static Context* ContextNew(Runtime* rt, StreamType inputType, const char* strOrF
     goto cleanup;
   }
 
+  ctx->numUnwindActions = 100;
+  ctx->unwindActions = malloc(sizeof(Object**) * ctx->numUnwindActions);
+  if (!ctx->unwindActions) {
+    goto cleanup;
+  }
+
   goto end;
 
 cleanup:
   if (ctx) {
     EnvironmentDelete(ctx->environment);
     StackDelete(ctx->stack);
+    free(ctx->unwindActions);
     ctx = NULL;
   }
 
@@ -395,18 +410,30 @@ end:
   return ctx;
 }
 
-static Object* StackPush(Context* ctx, Object* value) {
+static Object* GetError(Context* ctx) {
+  return ctx->error;
+}
+
+static void ThrowError(Context* ctx, Object* error) {
+  ctx->error = error;
+  longjmp(ctx->jmpBuf, 1);
+}
+
+static void ClearError(Context* ctx) {
+  ctx->error = NULL;
+}
+
+static void StackPush(Context* ctx, Object* value) {
   if (ctx->stack->top == ctx->stack->size) {
     unsigned int newSize = ctx->stack->size;
     Object** newData = (Object**) realloc(ctx->stack->data, sizeof(Object*) * newSize);
     if (!newData) {
-      return (Object*) &eOOM;
+      ThrowError(ctx, &eOOM);
     }
     ctx->stack->size = newSize;
     ctx->stack->data = newData;
   }
   ctx->stack->data[ctx->stack->top++] = value;
-  return NULL;
 }
 
 static void ObjectDelete(Context* ctx, Object* o) {
@@ -432,12 +459,16 @@ static void ContextDelete(Context* ctx) {
   EnvironmentDelete(ctx->environment);
   StackDelete(ctx->stack);
   ReaderDelete(ctx->reader);
+  free(ctx->unwindActions);
   free(ctx);
 }
 
+// WIP HERE
+//static void ContextPushUnwindAction
+
 static Object* StackPop(Context* ctx) {
   if (ctx->stack->top == 0) {
-    return ErrorNew(ctx, "Cannot pop empty stack");
+    ThrowError(ctx, ErrorNew(ctx, "Cannot pop empty stack"));
   }
 
   return ctx->stack->data[--ctx->stack->top];
@@ -454,8 +485,8 @@ static void* ObjectGetDataPtr(Object* o) {
   return (void*) dataLocation;
 }
 
-static void ErrorPushUnexpectedType(Context* ctx) {
-  StackPush(ctx, ErrorNew(ctx, "Unexpected type"));
+static void ErrorUnexpectedType(Context* ctx) {
+  ThrowError(ctx, ErrorNew(ctx, "Unexpected type"));
 }
 
 static int SymbolP(Object* o) {
@@ -465,8 +496,7 @@ static int SymbolP(Object* o) {
 static void SymbolDelete(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!SymbolP(o)) {
-    ErrorPushUnexpectedType(ctx);
-    return;
+    ErrorUnexpectedType(ctx);
   }
   Symbol* s = ObjectGetDataPtr(o);
   free(s->name);
@@ -475,7 +505,7 @@ static void SymbolDelete(Context* ctx) {
 static void SymbolPrint(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!SymbolP(o)) {
-    ErrorPushUnexpectedType(ctx);
+    ErrorUnexpectedType(ctx);
   }
   Symbol* s = ObjectGetDataPtr(o);
   fputs(s->name, stdout);
@@ -486,8 +516,7 @@ static Object* EnvironmentGet(Context* ctx, Symbol* name);
 static void SymbolEval(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!SymbolP(o)) {
-    ErrorPushUnexpectedType(ctx);
-    return;
+    ErrorUnexpectedType(ctx);
   }
   Symbol* s = ObjectGetDataPtr(o);
   Object* result = EnvironmentGet(ctx, s);
@@ -505,8 +534,7 @@ static int NumberP(Object* o) {
 static void NumberPrint(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!NumberP(o)) {
-    ErrorPushUnexpectedType(ctx);
-    return;
+    ErrorUnexpectedType(ctx);
   }
   Number* n = ObjectGetDataPtr(o);
   printf("%f", n->value);
@@ -521,8 +549,7 @@ static int ListP(Object* o) {
 static void ListPrint(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!ListP(o)) {
-    ErrorPushUnexpectedType(ctx);
-    return;
+    ErrorUnexpectedType(ctx);
   }
   List* l = ObjectGetDataPtr(o);
   fputc('(', stdout);
@@ -539,8 +566,7 @@ static void ListPrint(Context* ctx) {
     }
     o = l->next;
     if (!ListP(o)) {
-      ErrorPushUnexpectedType(ctx);
-      return;
+      ErrorUnexpectedType(ctx);
     }
     l = ObjectGetDataPtr(o);
   }
@@ -562,8 +588,7 @@ static Object* ListRest(List* lst) {
 static void ListEval(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!ListP(o)) {
-    ErrorPushUnexpectedType(ctx);
-    return;
+    ErrorUnexpectedType(ctx);
   }
   List* l = ObjectGetDataPtr(o);
   if (ListEmpty(l)) {
@@ -574,8 +599,7 @@ static void ListEval(Context* ctx) {
   if (!first) {
     // TODO: Change? This is a weird case. Should use a Nothing type for nil and introduce variant types. \
     It is currently impossible to distinguish between "no value" and an intentional nil.
-    StackPush(ctx, ErrorNew(ctx, "Cannot apply nil"));
-    return;
+    ThrowError(ctx, ErrorNew(ctx, "Cannot apply nil"));
   }
   if (first->info.type->evalFn != NULL) {
     if (first->info.type->evalFn->isBuiltIn) {
@@ -592,13 +616,12 @@ static void ListEval(Context* ctx) {
     bufsize += sizeof("Cannot apply  ");
     char* buf = malloc(bufsize);
     if (!buf) {
-      StackPush(ctx, &eOOM);
-      return;
+      ThrowError(ctx, &eOOM);
     }
     sprintf(buf, "Cannot apply %s", first->info.type->name);
-    StackPush(ctx, ErrorNew(ctx, buf));
+    Object* o = ErrorNew(ctx, buf);
     free(buf);
-    return;
+    ThrowError(ctx, o);
   }
   StackPush(ctx, ListRest(l));
   StackPush(ctx, first);
@@ -620,8 +643,7 @@ static int FunctionP(Object* o) {
 static void FunctionPrint(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!FunctionP(o)) {
-    ErrorPushUnexpectedType(ctx);
-    return;
+    ErrorUnexpectedType(ctx);
   }
   Function* f = ObjectGetDataPtr(o);
   printf("#<Function [%s]>", f->name);
@@ -629,12 +651,8 @@ static void FunctionPrint(Context* ctx) {
 
 static void FunctionApply(Context* ctx) {
   Object* o = StackPop(ctx);
-  if (ErrorP(o)) {
-    StackPush(ctx, o);
-    return;
-  }
   if (!FunctionP(o)) {
-    ErrorPushUnexpectedType(ctx);
+    ErrorUnexpectedType(ctx);
   }
   Function* f = ObjectGetDataPtr(o);
   
@@ -651,8 +669,7 @@ static int ErrorP(Object* o) {
 static void ErrorDelete(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!ErrorP(o)) {
-    ErrorPushUnexpectedType(ctx);
-    return;
+    ErrorUnexpectedType(ctx);
   }
   Error* e = ObjectGetDataPtr(o);
   free(e->message);
@@ -662,8 +679,7 @@ static void ErrorDelete(Context* ctx) {
 static void ErrorPrint(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!ErrorP(o)) {
-    ErrorPushUnexpectedType(ctx);
-    return;
+    ErrorUnexpectedType(ctx);
   }
   Error* e = ObjectGetDataPtr(o);
   fputs(e->message, stdout);
@@ -776,6 +792,11 @@ static void initBuiltins() {
   tFunction.printFn = &fFunctionPrint;
 
 
+  // Static errors
+  eOOM.header.marked = 0;
+  eOOM.header.next = NULL;
+  eOOM.header.type = &tError;
+  eOOM.error.message = "Out of memory";
 }
 
 static Runtime* RuntimeNew(StreamType inputType, const char* strOrFileName) {
@@ -865,13 +886,13 @@ static int StreamGet(Stream* s) {
 
 
 // Returns the next token or NULL on end of input.
-static int TokenizerNext(Context* ctx, Tokenizer* tokenizer, const char** token) {
+static void TokenizerNext(Context* ctx, Tokenizer* tokenizer, const char** token) {
   const char ws [] = " \n\r\t\v\b\f"; // 7
   const char delims [] = "()[]{}"; // 6
 
   if (StreamEnd(tokenizer->stream)) {
     (*token) = NULL;
-    return 1;
+    return;
   }
 
   unsigned int pos = 0;
@@ -879,7 +900,7 @@ static int TokenizerNext(Context* ctx, Tokenizer* tokenizer, const char** token)
     if (tokenizer->c == -1) {
       if (pos == 0) {
         (*token) = NULL;
-        return 1;
+        return;
       }
       goto end;
     }
@@ -913,9 +934,8 @@ static int TokenizerNext(Context* ctx, Tokenizer* tokenizer, const char** token)
       unsigned int newSize = tokenizer->tokenSize * 2;
       char* newToken = (char*) realloc(tokenizer->token, newSize);
       if (newToken == NULL) {
-        ErrorPushUnexpectedType(ctx);
         (*token) = NULL;
-        return 0;
+        ThrowError(ctx, &eOOM);
       }
       tokenizer->tokenSize = newSize;
       tokenizer->token = newToken;
@@ -929,13 +949,13 @@ static int TokenizerNext(Context* ctx, Tokenizer* tokenizer, const char** token)
 end:
   tokenizer->token[pos] = 0;
   (*token) = tokenizer->token;
-  return 1;
+  return;
 }
 
 static Object* ObjectAllocRaw(Context* ctx, Type* type) {
   Object* o = malloc(sizeof(Object) +sizeof(void*) +type->alignment - 1 + type->size);
   if (!o) {
-    return NULL;
+    ThrowError(ctx, &eOOM);
   }
 
   o->info.type = type;
@@ -955,9 +975,6 @@ static Object* readNumber(Context* ctx, const char* token) {
   double number = strtod(token, &endptr);
   if (endptr > token) {
     result = ObjectAllocRaw(ctx, &tNumber);
-    if (ErrorP(result)) {
-      return result;
-    }
     Number* n = ObjectGetDataPtr(result);
     n->value = number;
     return result;
@@ -969,39 +986,29 @@ static Object* readList(Context* ctx, const char* token, Reader* r) {
   if (strcmp(token, "(") != 0) {
     return NULL;
   }
-  if (!TokenizerNext(ctx, r->tokenizer, &token)) {
-    return StackPop(ctx);
-  }
+  TokenizerNext(ctx, r->tokenizer, &token);
   if (!token) {
     return NULL;
   }
   Object* headObj = ObjectAllocRaw(ctx, &tList);
-  if (ErrorP(headObj)) {
-    return headObj;
-  }
   List* lst = ObjectGetDataPtr(headObj);
   lst->value = NULL;
   lst->next = NULL;
   while (strcmp(token, ")")) {
     Object* value = ReaderReadInternal(ctx, r);
     if (!value) {
-      return ErrorNew(ctx, "Unexpected end of input");
+      ThrowError(ctx, ErrorNew(ctx, "Unexpected end of input"));
     }
     if (lst->value) {
       lst->next = ObjectAllocRaw(ctx, &tList);
-      if (ErrorP(lst->next)) {
-        return lst->next;
-      }
       lst = ObjectGetDataPtr(lst->next);
       lst->value = NULL;
       lst->next = NULL;
     }
     lst->value = value;
-    if (!TokenizerNext(ctx, r->tokenizer, &token)) {
-      return StackPop(ctx);
-    }
+    TokenizerNext(ctx, r->tokenizer, &token);
     if (!token) {
-      return ErrorNew(ctx, "Unexpected end of input");
+      ThrowError(ctx, ErrorNew(ctx, "Unexpected end of input"));
     }
   }
   return headObj;
@@ -1009,26 +1016,20 @@ static Object* readList(Context* ctx, const char* token, Reader* r) {
 
 static Object* SymbolNew(Context* ctx, const char* name) {
   Object* symObj = ObjectAllocRaw(ctx, &tSymbol);
-  if (ErrorP(symObj)) {
-    return symObj;
-  }
   Symbol* sym = ObjectGetDataPtr(symObj);
   sym->name = _strdup(name);
   if (!sym->name) {
-    return (Object*) &eOOM;
+    ThrowError(ctx, &eOOM);
   }
   return symObj;
 }
 
 static Object* ErrorNew(Context* ctx, const char* message) {
   Object* errObj = ObjectAllocRaw(ctx, &tError);
-  if (!errObj) {
-    return (Object*) &eOOM;
-  }
   Error* e = ObjectGetDataPtr(errObj);
   e->message = _strdup(message);
   if (!e->message) {
-    return (Object*) &eOOM;
+    ThrowError(ctx, &eOOM);
   }
   return errObj;
 }
@@ -1053,9 +1054,7 @@ static Object* ReaderReadInternal(Context* ctx, Reader* r) {
 // Returns NULL on end of input
 static Object* ReaderRead(Context* ctx, Reader* r) {
   const char* token;
-  if (!TokenizerNext(ctx, r->tokenizer, &token)) {
-    return StackPop(ctx);
-  }
+  TokenizerNext(ctx, r->tokenizer, &token);
   if (!token) {
     return NULL;
   }
@@ -1091,14 +1090,14 @@ static Object* EnvironmentBind(Context* ctx, Symbol* name, Object* obj) {
     unsigned int newBindingsSize = ctx->environment->bindingsListSize * 2;
     char** newNames = realloc(ctx->environment->names, newBindingsSize * sizeof(char*));
     if (!newNames) {
-      return (Object*) &eOOM;
+      ThrowError(ctx, &eOOM);
     }
     for (unsigned int i = ctx->environment->bindingsListSize; i < newBindingsSize; ++i) {
       newNames[i] = NULL;
     }
     Object** newObjects = realloc(ctx->environment->objects, newBindingsSize * sizeof(Object*));
     if (!newObjects) {
-      return (Object*) &eOOM;
+      ThrowError(ctx, &eOOM);
     }
     hasFree = 1;
     freeSlot = ctx->environment->bindingsListSize;
@@ -1108,7 +1107,7 @@ static Object* EnvironmentBind(Context* ctx, Symbol* name, Object* obj) {
   }
   ctx->environment->names[freeSlot] = _strdup(name->name);
   if (!ctx->environment->names[freeSlot]) {
-    return (Object*) &eOOM;
+    ThrowError(ctx, &eOOM);
   }
   ctx->environment->objects[freeSlot] = obj;
   return NULL;
@@ -1137,6 +1136,22 @@ int main(int argc, char* argv []) {
 
   Context* ctx = rt->currentContext;
   Reader* r = ctx->reader;
+
+jmppoint:;
+
+  int jmpResult = setjmp(ctx->jmpBuf);
+  if (jmpResult) {
+    Object* o = ctx->error;
+    if (!o) {
+      fprintf(stderr, "Unknown error\n");
+    }
+    else {
+      Error* e = ObjectGetDataPtr(o);
+      fprintf(stderr, "Error: %s\n", e->message);
+    }
+    goto jmppoint;
+  }
+
   Object* o = ReaderRead(ctx, r);
   while (o) {
     if (o->info.type->evalFn && o->info.type->evalFn->isBuiltIn) {
