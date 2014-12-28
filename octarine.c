@@ -428,7 +428,7 @@ static void StackPush(Context* ctx, Object* value) {
     unsigned int newSize = ctx->stack->size;
     Object** newData = (Object**) realloc(ctx->stack->data, sizeof(Object*) * newSize);
     if (!newData) {
-      ThrowError(ctx, &eOOM);
+      ThrowError(ctx, (Object*)&eOOM);
     }
     ctx->stack->size = newSize;
     ctx->stack->data = newData;
@@ -485,8 +485,12 @@ static void* ObjectGetDataPtr(Object* o) {
   return (void*) dataLocation;
 }
 
-static void ErrorUnexpectedType(Context* ctx) {
+static void ThrowUnexpectedType(Context* ctx) {
   ThrowError(ctx, ErrorNew(ctx, "Unexpected type"));
+}
+
+static void ThrowOOM(Context* ctx) {
+  ThrowError(ctx, (Object*) &eOOM);
 }
 
 static int SymbolP(Object* o) {
@@ -496,7 +500,7 @@ static int SymbolP(Object* o) {
 static void SymbolDelete(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!SymbolP(o)) {
-    ErrorUnexpectedType(ctx);
+    ThrowUnexpectedType(ctx);
   }
   Symbol* s = ObjectGetDataPtr(o);
   free(s->name);
@@ -505,7 +509,7 @@ static void SymbolDelete(Context* ctx) {
 static void SymbolPrint(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!SymbolP(o)) {
-    ErrorUnexpectedType(ctx);
+    ThrowUnexpectedType(ctx);
   }
   Symbol* s = ObjectGetDataPtr(o);
   fputs(s->name, stdout);
@@ -516,7 +520,7 @@ static Object* EnvironmentGet(Context* ctx, Symbol* name);
 static void SymbolEval(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!SymbolP(o)) {
-    ErrorUnexpectedType(ctx);
+    ThrowUnexpectedType(ctx);
   }
   Symbol* s = ObjectGetDataPtr(o);
   Object* result = EnvironmentGet(ctx, s);
@@ -534,7 +538,7 @@ static int NumberP(Object* o) {
 static void NumberPrint(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!NumberP(o)) {
-    ErrorUnexpectedType(ctx);
+    ThrowUnexpectedType(ctx);
   }
   Number* n = ObjectGetDataPtr(o);
   printf("%f", n->value);
@@ -549,7 +553,7 @@ static int ListP(Object* o) {
 static void ListPrint(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!ListP(o)) {
-    ErrorUnexpectedType(ctx);
+    ThrowUnexpectedType(ctx);
   }
   List* l = ObjectGetDataPtr(o);
   fputc('(', stdout);
@@ -566,7 +570,7 @@ static void ListPrint(Context* ctx) {
     }
     o = l->next;
     if (!ListP(o)) {
-      ErrorUnexpectedType(ctx);
+      ThrowUnexpectedType(ctx);
     }
     l = ObjectGetDataPtr(o);
   }
@@ -588,7 +592,7 @@ static Object* ListRest(List* lst) {
 static void ListEval(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!ListP(o)) {
-    ErrorUnexpectedType(ctx);
+    ThrowUnexpectedType(ctx);
   }
   List* l = ObjectGetDataPtr(o);
   if (ListEmpty(l)) {
@@ -616,7 +620,7 @@ static void ListEval(Context* ctx) {
     bufsize += sizeof("Cannot apply  ");
     char* buf = malloc(bufsize);
     if (!buf) {
-      ThrowError(ctx, &eOOM);
+      ThrowError(ctx, (Object*)&eOOM);
     }
     sprintf(buf, "Cannot apply %s", first->info.type->name);
     Object* o = ErrorNew(ctx, buf);
@@ -643,7 +647,7 @@ static int FunctionP(Object* o) {
 static void FunctionPrint(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!FunctionP(o)) {
-    ErrorUnexpectedType(ctx);
+    ThrowUnexpectedType(ctx);
   }
   Function* f = ObjectGetDataPtr(o);
   printf("#<Function [%s]>", f->name);
@@ -652,7 +656,7 @@ static void FunctionPrint(Context* ctx) {
 static void FunctionApply(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!FunctionP(o)) {
-    ErrorUnexpectedType(ctx);
+    ThrowUnexpectedType(ctx);
   }
   Function* f = ObjectGetDataPtr(o);
   
@@ -669,7 +673,7 @@ static int ErrorP(Object* o) {
 static void ErrorDelete(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!ErrorP(o)) {
-    ErrorUnexpectedType(ctx);
+    ThrowUnexpectedType(ctx);
   }
   Error* e = ObjectGetDataPtr(o);
   free(e->message);
@@ -679,7 +683,7 @@ static void ErrorDelete(Context* ctx) {
 static void ErrorPrint(Context* ctx) {
   Object* o = StackPop(ctx);
   if (!ErrorP(o)) {
-    ErrorUnexpectedType(ctx);
+    ThrowUnexpectedType(ctx);
   }
   Error* e = ObjectGetDataPtr(o);
   fputs(e->message, stdout);
@@ -935,7 +939,7 @@ static void TokenizerNext(Context* ctx, Tokenizer* tokenizer, const char** token
       char* newToken = (char*) realloc(tokenizer->token, newSize);
       if (newToken == NULL) {
         (*token) = NULL;
-        ThrowError(ctx, &eOOM);
+        ThrowOOM(ctx);
       }
       tokenizer->tokenSize = newSize;
       tokenizer->token = newToken;
@@ -955,7 +959,7 @@ end:
 static Object* ObjectAllocRaw(Context* ctx, Type* type) {
   Object* o = malloc(sizeof(Object) +sizeof(void*) +type->alignment - 1 + type->size);
   if (!o) {
-    ThrowError(ctx, &eOOM);
+    ThrowOOM(ctx);
   }
 
   o->info.type = type;
@@ -1019,7 +1023,7 @@ static Object* SymbolNew(Context* ctx, const char* name) {
   Symbol* sym = ObjectGetDataPtr(symObj);
   sym->name = _strdup(name);
   if (!sym->name) {
-    ThrowError(ctx, &eOOM);
+    ThrowOOM(ctx);
   }
   return symObj;
 }
@@ -1029,7 +1033,7 @@ static Object* ErrorNew(Context* ctx, const char* message) {
   Error* e = ObjectGetDataPtr(errObj);
   e->message = _strdup(message);
   if (!e->message) {
-    ThrowError(ctx, &eOOM);
+    ThrowOOM(ctx);
   }
   return errObj;
 }
@@ -1090,14 +1094,14 @@ static Object* EnvironmentBind(Context* ctx, Symbol* name, Object* obj) {
     unsigned int newBindingsSize = ctx->environment->bindingsListSize * 2;
     char** newNames = realloc(ctx->environment->names, newBindingsSize * sizeof(char*));
     if (!newNames) {
-      ThrowError(ctx, &eOOM);
+      ThrowOOM(ctx);
     }
     for (unsigned int i = ctx->environment->bindingsListSize; i < newBindingsSize; ++i) {
       newNames[i] = NULL;
     }
     Object** newObjects = realloc(ctx->environment->objects, newBindingsSize * sizeof(Object*));
     if (!newObjects) {
-      ThrowError(ctx, &eOOM);
+      ThrowOOM(ctx);
     }
     hasFree = 1;
     freeSlot = ctx->environment->bindingsListSize;
@@ -1107,7 +1111,7 @@ static Object* EnvironmentBind(Context* ctx, Symbol* name, Object* obj) {
   }
   ctx->environment->names[freeSlot] = _strdup(name->name);
   if (!ctx->environment->names[freeSlot]) {
-    ThrowError(ctx, &eOOM);
+    ThrowOOM(ctx);
   }
   ctx->environment->objects[freeSlot] = obj;
   return NULL;
