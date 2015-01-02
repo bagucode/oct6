@@ -463,8 +463,23 @@ static void ContextDelete(Context* ctx) {
   free(ctx);
 }
 
+static void ThrowUnexpectedType(Context* ctx) {
+  ThrowError(ctx, ErrorNew(ctx, "Unexpected type"));
+}
+
+static void ThrowOOM(Context* ctx) {
+  ThrowError(ctx, (Object*) &eOOM);
+}
+
+static int FunctionP(Object* o);
+
 // WIP HERE
-//static void ContextPushUnwindAction
+static void ContextPushUnwindAction(Context* ctx, Object* action) {
+  if (!FunctionP(action)) {
+    ThrowUnexpectedType(ctx);
+  }
+  
+}
 
 static Object* StackPop(Context* ctx) {
   if (ctx->stack->top == 0) {
@@ -483,14 +498,6 @@ static void* ObjectGetDataPtr(Object* o) {
   unsigned long long offset = (unsigned long long) &o->data[0];
   unsigned long long dataLocation = alignOffset(offset, o->info.type->alignment);
   return (void*) dataLocation;
-}
-
-static void ThrowUnexpectedType(Context* ctx) {
-  ThrowError(ctx, ErrorNew(ctx, "Unexpected type"));
-}
-
-static void ThrowOOM(Context* ctx) {
-  ThrowError(ctx, (Object*) &eOOM);
 }
 
 static int SymbolP(Object* o) {
@@ -601,8 +608,8 @@ static void ListEval(Context* ctx) {
   }
   Object* first = ListFirst(l);
   if (!first) {
-    // TODO: Change? This is a weird case. Should use a Nothing type for nil and introduce variant types. \
-    It is currently impossible to distinguish between "no value" and an intentional nil.
+    // TODO: Change? This is a weird case. Should use a Nothing type for nil and introduce variant types.
+    // It is currently impossible to distinguish between "no value" and an intentional nil.
     ThrowError(ctx, ErrorNew(ctx, "Cannot apply nil"));
   }
   if (first->info.type->evalFn != NULL) {
