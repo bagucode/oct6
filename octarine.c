@@ -5,8 +5,6 @@
 #define _CRT_SECURE_NO_WARNINGS
 #endif
 
-// commit test
-
 #ifdef _DEBUG
 #define DEBUG
 #elif defined NDEBUG
