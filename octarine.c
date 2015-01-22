@@ -20,6 +20,7 @@
 // Runtime types
 typedef struct sRuntime Runtime;
 typedef struct sContext Context;
+typedef struct sUnwindList UnwindList;
 typedef struct sEnvironment Environment;
 typedef struct sType Type;
 typedef struct sObjectInfo ObjectInfo;
@@ -78,6 +79,11 @@ struct sRuntime {
   Environment* environment;
 };
 
+struct sUnwindList {
+  Object* action;
+  UnwindList* next;
+};
+
 struct sContext {
   Runtime* runtime;
   Environment* environment;
@@ -85,8 +91,7 @@ struct sContext {
   Object* lastObject;
   Reader* reader;
   Object* error;
-  Object** unwindActions;
-  unsigned int numUnwindActions;
+  UnwindList* unwindActions;
   jmp_buf jmpBuf;
 };
 
@@ -373,7 +378,6 @@ static Context* ContextNew(Runtime* rt, StreamType inputType, const char* strOrF
   ctx->stack = NULL;
   ctx->error = NULL;
   ctx->unwindActions = NULL;
-  ctx->numUnwindActions = 0;
 
   ctx->environment = EnvironmentNew(rt->environment);
   if (!ctx->environment) {
@@ -387,12 +391,6 @@ static Context* ContextNew(Runtime* rt, StreamType inputType, const char* strOrF
 
   ctx->reader = ReaderNew(inputType, strOrFileName);
   if (!ctx->reader) {
-    goto cleanup;
-  }
-
-  ctx->numUnwindActions = 100;
-  ctx->unwindActions = malloc(sizeof(Object**) * ctx->numUnwindActions);
-  if (!ctx->unwindActions) {
     goto cleanup;
   }
 
@@ -478,7 +476,7 @@ static void ContextPushUnwindAction(Context* ctx, Object* action) {
   if (!FunctionP(action)) {
     ThrowUnexpectedType(ctx);
   }
-  
+
 }
 
 static Object* StackPop(Context* ctx) {
