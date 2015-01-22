@@ -622,6 +622,11 @@ static void ListEval(Context* ctx) {
       abort(); // TODO: handle eval of non built in functions
     }
   }
+  if (!first) {
+	  // TODO: Change? This is a weird case. Should use a Nothing type for nil and introduce variant types.
+	  // It is currently impossible to distinguish between "no value" and an intentional nil.
+	  ThrowError(ctx, ErrorNew(ctx, "Cannot apply nil"));
+  }
   if (!first->info.type->applyFn) {
     size_t bufsize = strlen(first->info.type->name);
     bufsize += sizeof("Cannot apply  ");
@@ -778,13 +783,17 @@ static void initBuiltins() {
   tList.name = "List";
 
   tList.deleteFn = NULL;
-  tList.evalFn = NULL;
   tList.applyFn = NULL;
 
   fListPrint.name = "list-print";
   fListPrint.isBuiltIn = 1;
   fListPrint.builtIn = &ListPrint;
   tList.printFn = &fListPrint;
+
+  fListEval.name = "list-eval";
+  fListEval.isBuiltIn = 1;
+  fListEval.builtIn = ListEval;
+  tList.evalFn = &fListEval;
 
   // Function
 
@@ -1160,6 +1169,7 @@ jmppoint:;
       Error* e = ObjectGetDataPtr(o);
       fprintf(stderr, "Error: %s\n", e->message);
     }
+	ClearError(ctx);
     goto jmppoint;
   }
 
