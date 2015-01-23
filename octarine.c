@@ -471,12 +471,27 @@ static void ThrowOOM(Context* ctx) {
 
 static int FunctionP(Object* o);
 
-// WIP HERE
 static void ContextPushUnwindAction(Context* ctx, Object* action) {
   if (!FunctionP(action)) {
     ThrowUnexpectedType(ctx);
   }
-
+  if (!ctx->unwindActions) {
+    ctx->unwindActions = (UnwindList*)calloc(1, sizeof(UnwindList));
+    if (!ctx->unwindActions) {
+      ThrowOOM(ctx);
+    }
+    ctx->unwindActions->action = action;
+    return;
+  }
+  UnwindList* cur = ctx->unwindActions;
+  while (cur->next) {
+    cur = cur->next;
+  }
+  cur->next = (UnwindList*) calloc(1, sizeof(UnwindList));
+  if (!cur->next) {
+    ThrowOOM(ctx);
+  }
+  cur->next->action = action;
 }
 
 static Object* StackPop(Context* ctx) {
