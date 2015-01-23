@@ -446,6 +446,13 @@ static void ContextDelete(Context* ctx) {
     return;
   }
 
+  UnwindList* ul = ctx->unwindActions;
+  while (ul) {
+    UnwindList* tmp = ul;
+    ul = ul->next;
+    free(tmp);
+  }
+
   Object* current = ctx->lastObject;
   while (current) {
     Object* next = current->info.next;
