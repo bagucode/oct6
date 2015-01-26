@@ -186,7 +186,7 @@ static Stream* StreamNew(StreamType type, const char* strOrFileName) {
 
   if (type == ST_STRING) {
     s->stringPos = 0;
-    s->string = _strdup(strOrFileName);
+    s->string = strdup(strOrFileName);
     if (!s->string) {
       goto cleanup;
     }
@@ -1057,7 +1057,7 @@ static Object* readList(Context* ctx, const char* token, Reader* r) {
 static Object* SymbolNew(Context* ctx, const char* name) {
   Object* symObj = ObjectAllocRaw(ctx, &tSymbol);
   Symbol* sym = ObjectGetDataPtr(symObj);
-  sym->name = _strdup(name);
+  sym->name = strdup(name);
   if (!sym->name) {
     ThrowOOM(ctx);
   }
@@ -1067,7 +1067,7 @@ static Object* SymbolNew(Context* ctx, const char* name) {
 static Object* ErrorNew(Context* ctx, const char* message) {
   Object* errObj = ObjectAllocRaw(ctx, &tError);
   Error* e = ObjectGetDataPtr(errObj);
-  e->message = _strdup(message);
+  e->message = strdup(message);
   if (!e->message) {
     ThrowOOM(ctx);
   }
@@ -1145,7 +1145,7 @@ static Object* EnvironmentBind(Context* ctx, Symbol* name, Object* obj) {
     ctx->environment->names = newNames;
     ctx->environment->objects = newObjects;
   }
-  ctx->environment->names[freeSlot] = _strdup(name->name);
+  ctx->environment->names[freeSlot] = strdup(name->name);
   if (!ctx->environment->names[freeSlot]) {
     ThrowOOM(ctx);
   }
