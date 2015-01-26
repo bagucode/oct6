@@ -2,7 +2,7 @@
 // Compile release: clang -D RELEASE -Ofast -o octarine octarine.c
 
 #ifdef WIN32
-#define _CRT_SECURE_NO_WARNINGS
+#pragma warning (disable : 4996) // Stop whining about deprecated functions
 #endif
 
 #ifdef _DEBUG
@@ -414,6 +414,23 @@ static Object* GetError(Context* ctx) {
 
 static void ThrowError(Context* ctx, Object* error) {
   ctx->error = error;
+  // Perform unwind actions here since they might cancel the error. I think.
+  // TODO: Maybe reverse the list? Unwinding first to last is weird.
+  UnwindList* ul = ctx->unwindActions;
+  while (ul) {
+    if (!FunctionP(ul->action)) {  // Ouch. Can't really throw here.
+      fputs("FATAL: Unwind action was not a function.", stderr);
+      abort();
+    }
+    Function* f = ObjectGetDataPtr(ul->action);
+    if (f->isBuiltIn) { // TODO: invoke non-builtin
+      f->builtIn(ctx);
+    }
+    UnwindList* tmp = ul;
+    ul = ul->next;
+    free(tmp);
+  }
+  ctx->unwindActions = NULL;
   longjmp(ctx->jmpBuf, 1);
 }
 
