@@ -412,6 +412,9 @@ static Object* GetError(Context* ctx) {
   return ctx->error;
 }
 
+static int FunctionP(Object* o);
+static void* ObjectGetDataPtr(Object* o);
+
 static void ThrowError(Context* ctx, Object* error) {
   ctx->error = error;
   // Perform unwind actions here since they might cancel the error. I think.
@@ -492,8 +495,6 @@ static void ThrowUnexpectedType(Context* ctx) {
 static void ThrowOOM(Context* ctx) {
   ThrowError(ctx, (Object*) &eOOM);
 }
-
-static int FunctionP(Object* o);
 
 static void ContextPushUnwindAction(Context* ctx, Object* action) {
   if (!FunctionP(action)) {
