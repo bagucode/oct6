@@ -39,6 +39,7 @@ typedef struct sNumber Number;
 typedef struct sSymbol Symbol;
 typedef struct sList List;
 typedef struct sFunction Function;
+typedef struct sStaticFunction StaticFunction;
 
 // Runtime type definitions
 
@@ -160,6 +161,11 @@ struct sFunction {
     BuiltInFn builtIn;
     Object* code;
   };
+};
+
+struct sStaticFunction {
+  ObjectInfo header;
+  Function fn;
 };
 
 // All of globals
@@ -1173,6 +1179,12 @@ static Object* EnvironmentBind(Context* ctx, Symbol* name, Object* obj) {
 
 // Entry point
 
+StaticFunction fTestUnwind;
+
+void testUnwind(Context* ctx) {
+	printf("UNWIND ACTION!\n");
+}
+
 int main(int argc, char* argv []) {
   if (argc < 2) {
     fputs("Give program please.\n", stderr);
@@ -1194,6 +1206,15 @@ int main(int argc, char* argv []) {
 
   Context* ctx = rt->currentContext;
   Reader* r = ctx->reader;
+
+  fTestUnwind.header.marked = 0;
+  fTestUnwind.header.next = NULL;
+  fTestUnwind.header.type = &tFunction;
+  fTestUnwind.fn.isBuiltIn = 1;
+  fTestUnwind.fn.builtIn = testUnwind;
+  fTestUnwind.fn.name = "TestUnwind";
+
+  ContextPushUnwindAction(ctx, (Object*)&fTestUnwind);
 
 jmppoint:;
 
