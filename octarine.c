@@ -1016,7 +1016,13 @@ end:
 }
 
 static void ObjectMark(Object* o) {
-
+  // WIP
+  if (o->header.marked) {
+    return;
+  }
+  o->header.marked = 1;
+  Object* field;
+  //o->header.type->
 }
 
 static void ContextCollectGarbage(Context* ctx) {
