@@ -765,11 +765,17 @@ static void initBuiltins() {
   tError.evalFn = NULL;
   tError.applyFn = NULL;
 
+  fErrorDelete._header.marked = 1;
+  fErrorDelete._header.next = NULL;
+  fErrorDelete._header.type = &tFunction;
   fErrorDelete.name = "error-delete";
   fErrorDelete.isBuiltIn = 1;
   fErrorDelete.builtIn = &ErrorDelete;
   tError.deleteFn = &fErrorDelete;
 
+  fErrorPrint._header.marked = 1;
+  fErrorPrint._header.next = NULL;
+  fErrorPrint._header.type = &tFunction;
   fErrorPrint.name = "error-print";
   fErrorPrint.isBuiltIn = 1;
   fErrorPrint.builtIn = &ErrorPrint;
@@ -787,6 +793,9 @@ static void initBuiltins() {
   tNumber.evalFn = NULL;
   tNumber.applyFn = NULL;
 
+  fNumberPrint._header.marked = 1;
+  fNumberPrint._header.next = NULL;
+  fNumberPrint._header.type = &tFunction;
   fNumberPrint.name = "number-print";
   fNumberPrint.isBuiltIn = 1;
   fNumberPrint.builtIn = &NumberPrint;
@@ -802,16 +811,25 @@ static void initBuiltins() {
 
   tSymbol.applyFn = NULL;
 
+  fSymbolDelete._header.marked = 1;
+  fSymbolDelete._header.next = NULL;
+  fSymbolDelete._header.type = &tFunction;
   fSymbolDelete.name = "symbol-delete";
   fSymbolDelete.isBuiltIn = 1;
   fSymbolDelete.builtIn = &SymbolDelete;
   tSymbol.deleteFn = &fSymbolDelete;
 
+  fSymbolPrint._header.marked = 1;
+  fSymbolPrint._header.next = NULL;
+  fSymbolPrint._header.type = &tFunction;
   fSymbolPrint.name = "symbol-print";
   fSymbolPrint.isBuiltIn = 1;
   fSymbolPrint.builtIn = &SymbolPrint;
   tSymbol.printFn = &fSymbolPrint;
 
+  fSymbolEval._header.marked = 1;
+  fSymbolEval._header.next = NULL;
+  fSymbolEval._header.type = &tFunction;
   fSymbolEval.name = "symbol-eval";
   fSymbolEval.isBuiltIn = 1;
   fSymbolEval.builtIn = &SymbolEval;
@@ -828,11 +846,17 @@ static void initBuiltins() {
   tList.deleteFn = NULL;
   tList.applyFn = NULL;
 
+  fListPrint._header.marked = 1;
+  fListPrint._header.next = NULL;
+  fListPrint._header.type = &tFunction;
   fListPrint.name = "list-print";
   fListPrint.isBuiltIn = 1;
   fListPrint.builtIn = &ListPrint;
   tList.printFn = &fListPrint;
 
+  fListEval._header.marked = 1;
+  fListEval._header.next = NULL;
+  fListEval._header.type = &tFunction;
   fListEval.name = "list-eval";
   fListEval.isBuiltIn = 1;
   fListEval.builtIn = ListEval;
@@ -849,14 +873,16 @@ static void initBuiltins() {
   tFunction.deleteFn = NULL;
   tFunction.evalFn = NULL;
 
+  fFunctionPrint._header.marked = 1;
+  fFunctionPrint._header.next = NULL;
+  fFunctionPrint._header.type = &tFunction;
   fFunctionPrint.name = "function-print";
   fFunctionPrint.isBuiltIn = 1;
   fFunctionPrint.builtIn = &FunctionPrint;
   tFunction.printFn = &fFunctionPrint;
 
-
   // Static errors
-  eOOM._header.marked = 0;
+  eOOM._header.marked = 1;
   eOOM._header.next = NULL;
   eOOM._header.type = &tError;
   eOOM.message = "Out of memory";
