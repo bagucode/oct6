@@ -44,9 +44,9 @@ typedef struct sStaticFunction StaticFunction;
 // Runtime type definitions
 
 struct sObjectInfo {
+  unsigned int marked;
   Type* type;
   Object* next;
-  unsigned int marked;
 };
 
 struct sObject {
@@ -1020,8 +1020,18 @@ end:
   return;
 }
 
+static void ObjectMark(Object* o) {
+
+}
+
 static void ContextCollectGarbage(Context* ctx) {
-  // WIP here
+  // WIP
+  // 1. Mark
+  unsigned int slot = ctx->stack->top;
+  while (slot) {
+    ObjectMark(ctx->stack->data[slot--]);
+  }
+  // 2. Sweep
 }
 
 static Object* ObjectAllocRaw(Context* ctx, Type* type) {
