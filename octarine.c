@@ -23,34 +23,32 @@ typedef struct sContext Context;
 typedef struct sUnwindList UnwindList;
 typedef struct sEnvironment Environment;
 typedef struct sType Type;
-typedef struct sObjectInfo ObjectInfo;
+typedef struct sObjectHeader ObjectHeader;
 typedef struct sObject Object;
 typedef struct sStack Stack;
 typedef void(*BuiltInFn)(Context* ctx);
-typedef struct sError Error;
-typedef struct sStaticError StaticError;
 typedef struct sStream Stream;
 typedef enum eStreamType StreamType;
 typedef struct sTokenizer Tokenizer;
 typedef struct sReader Reader;
 
 // Language types (Move more runtime types here. Full reflection is nice.)
+typedef struct sError Error;
 typedef struct sNumber Number;
 typedef struct sSymbol Symbol;
 typedef struct sList List;
 typedef struct sFunction Function;
-typedef struct sStaticFunction StaticFunction;
 
 // Runtime type definitions
 
-struct sObjectInfo {
+struct sObjectHeader {
   unsigned int marked;
   Type* type;
   Object* next;
 };
 
 struct sObject {
-  ObjectInfo info;
+  ObjectHeader header;
   char data[0];
 };
 
@@ -105,15 +103,6 @@ struct sEnvironment {
   Environment* parent;
 };
 
-struct sError {
-  char* message;
-};
-
-struct sStaticError {
-  ObjectInfo header;
-  Error error;
-};
-
 enum eStreamType {
   ST_STRING,
   ST_FILE
@@ -143,31 +132,35 @@ struct sReader {
 
 // Language type definitions
 
+struct sError {
+  ObjectHeader _header;
+  char* message;
+};
+
 struct sNumber {
+  ObjectHeader _header;
   double value;
 };
 
 struct sSymbol {
+  ObjectHeader _header;
   char* name;
 };
 
 struct sList {
+  ObjectHeader _header;
   Object* value;
   Object* next;
 };
 
 struct sFunction {
+  ObjectHeader _header;
   char* name;
   char isBuiltIn;
   union {
     BuiltInFn builtIn;
     Object* code;
   };
-};
-
-struct sStaticFunction {
-  ObjectInfo header;
-  Function fn;
 };
 
 // All of globals
@@ -178,7 +171,7 @@ static Type tList;
 static Type tFunction;
 static Type tError;
 
-static StaticError eOOM;
+static Error eOOM;
 
 // All of functions
 
@@ -451,12 +444,14 @@ static void ClearError(Context* ctx) {
   ctx->error = NULL;
 }
 
+static void ThrowOOM(Context* ctx);
+
 static void StackPush(Context* ctx, Object* value) {
   if (ctx->stack->top == ctx->stack->size) {
     unsigned int newSize = ctx->stack->size;
     Object** newData = (Object**)realloc(ctx->stack->data, sizeof(Object*) * newSize);
     if (!newData) {
-      ThrowError(ctx, (Object*)&eOOM);
+      ThrowOOM(ctx);
     }
     ctx->stack->size = newSize;
     ctx->stack->data = newData;
@@ -465,9 +460,9 @@ static void StackPush(Context* ctx, Object* value) {
 }
 
 static void ObjectDelete(Context* ctx, Object* o) {
-  if (o->info.type->deleteFn) {
+  if (o->header.type->deleteFn) {
     StackPush(ctx, o);
-    o->info.type->deleteFn->builtIn(ctx);
+    o->header.type->deleteFn->builtIn(ctx);
   }
 }
 
@@ -485,7 +480,7 @@ static void ContextDelete(Context* ctx) {
 
   Object* current = ctx->lastObject;
   while (current) {
-    Object* next = current->info.next;
+    Object* next = current->header.next;
     ObjectDelete(ctx, current);
     free(current);
     current = next;
@@ -544,12 +539,12 @@ static unsigned long long alignOffset(unsigned long long offset, unsigned long l
 
 static void* ObjectGetDataPtr(Object* o) {
   unsigned long long offset = (unsigned long long) &o->data[0];
-  unsigned long long dataLocation = alignOffset(offset, o->info.type->alignment);
+  unsigned long long dataLocation = alignOffset(offset, o->header.type->alignment);
   return (void*)dataLocation;
 }
 
 static int SymbolP(Object* o) {
-  return o->info.type == &tSymbol;
+  return o->header.type == &tSymbol;
 }
 
 static void SymbolDelete(Context* ctx) {
@@ -587,7 +582,7 @@ static Function fSymbolPrint;
 static Function fSymbolEval;
 
 static int NumberP(Object* o) {
-  return o->info.type == &tNumber;
+  return o->header.type == &tNumber;
 }
 
 static void NumberPrint(Context* ctx) {
@@ -602,7 +597,7 @@ static void NumberPrint(Context* ctx) {
 static Function fNumberPrint;
 
 static int ListP(Object* o) {
-  return o->info.type == &tList;
+  return o->header.type == &tList;
 }
 
 static void ListPrint(Context* ctx) {
@@ -613,9 +608,9 @@ static void ListPrint(Context* ctx) {
   List* l = ObjectGetDataPtr(o);
   fputc('(', stdout);
   while (l->value) {
-    if (l->value->info.type->printFn && l->value->info.type->printFn->isBuiltIn) {
+    if (l->value->header.type->printFn && l->value->header.type->printFn->isBuiltIn) {
       StackPush(ctx, l->value);
-      l->value->info.type->printFn->builtIn(ctx);
+      l->value->header.type->printFn->builtIn(ctx);
       if (l->next && ListP(l->next) && ((List*)ObjectGetDataPtr(l->next))->value) {
         fputc(' ', stdout);
       }
@@ -660,10 +655,10 @@ static void ListEval(Context* ctx) {
     // It is currently impossible to distinguish between "no value" and an intentional nil.
     ThrowError(ctx, ErrorNew(ctx, "Cannot apply nil"));
   }
-  if (first->info.type->evalFn != NULL) {
-    if (first->info.type->evalFn->isBuiltIn) {
+  if (first->header.type->evalFn != NULL) {
+    if (first->header.type->evalFn->isBuiltIn) {
       StackPush(ctx, first);
-      first->info.type->evalFn->builtIn(ctx);
+      first->header.type->evalFn->builtIn(ctx);
       first = StackPop(ctx);
     }
     else {
@@ -675,22 +670,22 @@ static void ListEval(Context* ctx) {
     // It is currently impossible to distinguish between "no value" and an intentional nil.
     ThrowError(ctx, ErrorNew(ctx, "Cannot apply nil"));
   }
-  if (!first->info.type->applyFn) {
-    size_t bufsize = strlen(first->info.type->name);
+  if (!first->header.type->applyFn) {
+    size_t bufsize = strlen(first->header.type->name);
     bufsize += sizeof("Cannot apply  ");
     char* buf = malloc(bufsize);
     if (!buf) {
-      ThrowError(ctx, (Object*)&eOOM);
+      ThrowOOM(ctx);
     }
-    sprintf(buf, "Cannot apply %s", first->info.type->name);
+    sprintf(buf, "Cannot apply %s", first->header.type->name);
     Object* o = ErrorNew(ctx, buf);
     free(buf);
     ThrowError(ctx, o);
   }
   StackPush(ctx, ListRest(l));
   StackPush(ctx, first);
-  if (first->info.type->applyFn->isBuiltIn) {
-    first->info.type->applyFn->builtIn(ctx);
+  if (first->header.type->applyFn->isBuiltIn) {
+    first->header.type->applyFn->builtIn(ctx);
   }
   else {
     abort(); // TODO: handle non built in functions
@@ -701,7 +696,7 @@ static Function fListPrint;
 static Function fListEval;
 
 static int FunctionP(Object* o) {
-  return o->info.type == &tFunction;
+  return o->header.type == &tFunction;
 }
 
 static void FunctionPrint(Context* ctx) {
@@ -720,14 +715,14 @@ static void FunctionApply(Context* ctx) {
   }
   Function* f = ObjectGetDataPtr(o);
 
-
+  // WIP
 }
 
 static Function fFunctionPrint;
 static Function fFunctionApply;
 
 static int ErrorP(Object* o) {
-  return o->info.type == &tError;
+  return o->header.type == &tError;
 }
 
 static void ErrorDelete(Context* ctx) {
@@ -861,10 +856,10 @@ static void initBuiltins() {
 
 
   // Static errors
-  eOOM.header.marked = 0;
-  eOOM.header.next = NULL;
-  eOOM.header.type = &tError;
-  eOOM.error.message = "Out of memory";
+  eOOM._header.marked = 0;
+  eOOM._header.next = NULL;
+  eOOM._header.type = &tError;
+  eOOM.message = "Out of memory";
 }
 
 static Runtime* RuntimeNew(StreamType inputType, const char* strOrFileName) {
@@ -1052,9 +1047,9 @@ static Object* ObjectAllocRaw(Context* ctx, Type* type) {
     ThrowOOM(ctx);
   }
 
-  o->info.type = type;
-  o->info.next = ctx->lastObject;
-  o->info.marked = 0;
+  o->header.type = type;
+  o->header.next = ctx->lastObject;
+  o->header.marked = 0;
 
   ctx->bytesAllocated += allocSize;
   ctx->lastObject = o;
@@ -1210,7 +1205,7 @@ static Object* EnvironmentBind(Context* ctx, Symbol* name, Object* obj) {
 
 // Entry point
 
-StaticFunction fTestUnwind;
+Function fTestUnwind;
 
 void testUnwind(Context* ctx) {
   printf("UNWIND ACTION!\n");
@@ -1238,12 +1233,12 @@ int main(int argc, char* argv[]) {
   Context* ctx = rt->currentContext;
   Reader* r = ctx->reader;
 
-  fTestUnwind.header.marked = 0;
-  fTestUnwind.header.next = NULL;
-  fTestUnwind.header.type = &tFunction;
-  fTestUnwind.fn.isBuiltIn = 1;
-  fTestUnwind.fn.builtIn = testUnwind;
-  fTestUnwind.fn.name = "TestUnwind";
+  fTestUnwind._header.marked = 0;
+  fTestUnwind._header.next = NULL;
+  fTestUnwind._header.type = &tFunction;
+  fTestUnwind.isBuiltIn = 1;
+  fTestUnwind.builtIn = testUnwind;
+  fTestUnwind.name = "TestUnwind";
 
   ContextPushUnwindAction(ctx, (Object*)&fTestUnwind);
 
@@ -1265,17 +1260,17 @@ jmppoint:;
 
   Object* o = ReaderRead(ctx, r);
   while (o) {
-    if (o->info.type->evalFn && o->info.type->evalFn->isBuiltIn) {
+    if (o->header.type->evalFn && o->header.type->evalFn->isBuiltIn) {
       StackPush(ctx, o);
-      o->info.type->evalFn->builtIn(ctx);
+      o->header.type->evalFn->builtIn(ctx);
       o = StackPop(ctx);
     }
     if (!o) {
       puts("nil");
     }
-    else if (o->info.type->printFn && o->info.type->printFn->isBuiltIn) {
+    else if (o->header.type->printFn && o->header.type->printFn->isBuiltIn) {
       StackPush(ctx, o);
-      o->info.type->printFn->builtIn(ctx);
+      o->header.type->printFn->builtIn(ctx);
       putc('\n', stdout);
     }
     o = ReaderRead(ctx, r);
