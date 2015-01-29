@@ -90,6 +90,8 @@ struct sContext {
   Environment* environment;
   Stack* stack;
   Object* lastObject;
+  unsigned int collectionThreshold;
+  unsigned int bytesAllocated;
   Reader* reader;
   Object* error;
   UnwindList* unwindActions;
@@ -183,7 +185,7 @@ static StaticError eOOM;
 static Object* ErrorNew(Context* ctx, const char* message);
 
 static Stream* StreamNew(StreamType type, const char* strOrFileName) {
-  Stream* s = (Stream*) malloc(sizeof(Stream));
+  Stream* s = (Stream*)malloc(sizeof(Stream));
   if (!s) {
     goto cleanup;
   }
@@ -233,7 +235,7 @@ static void StreamDelete(Stream* stream) {
 }
 
 static Tokenizer* TokenizerNew(StreamType inputType, const char* strOrFileName) {
-  Tokenizer* t = (Tokenizer*) malloc(sizeof(Tokenizer));
+  Tokenizer* t = (Tokenizer*)malloc(sizeof(Tokenizer));
   if (!t) {
     goto cleanup;
   }
@@ -241,7 +243,7 @@ static Tokenizer* TokenizerNew(StreamType inputType, const char* strOrFileName) 
   t->c = ' ';
   t->tokenSize = 100;
 
-  t->token = (char*) malloc(t->tokenSize);
+  t->token = (char*)malloc(t->tokenSize);
   if (!t->token) {
     goto cleanup;
   }
@@ -276,7 +278,7 @@ static void TokenizerDelete(Tokenizer* tokenizer) {
 }
 
 static Reader* ReaderNew(StreamType inputType, const char* strOrFileName) {
-  Reader* r = (Reader*) malloc(sizeof(Reader));
+  Reader* r = (Reader*)malloc(sizeof(Reader));
   if (!r) {
     return NULL;
   }
@@ -300,7 +302,7 @@ static void ReaderDelete(Reader* reader) {
 }
 
 static Environment* EnvironmentNew(Environment* parent) {
-  Environment* env = (Environment*) malloc(sizeof(Environment));
+  Environment* env = (Environment*)malloc(sizeof(Environment));
   if (!env) {
     goto cleanup;
   }
@@ -308,7 +310,7 @@ static Environment* EnvironmentNew(Environment* parent) {
   env->parent = parent;
   env->bindingsListSize = 100;
 
-  env->names = (char**) malloc(sizeof(char*) * env->bindingsListSize);
+  env->names = (char**)malloc(sizeof(char*) * env->bindingsListSize);
   if (!env->names) {
     goto cleanup;
   }
@@ -317,7 +319,7 @@ static Environment* EnvironmentNew(Environment* parent) {
     env->names[i] = NULL; // free slot
   }
 
-  env->objects = (Object**) malloc(sizeof(Object*) * env->bindingsListSize);
+  env->objects = (Object**)malloc(sizeof(Object*) * env->bindingsListSize);
   if (!env->objects) {
     goto cleanup;
   }
@@ -350,14 +352,14 @@ static void EnvironmentDelete(Environment* env) {
 }
 
 static Stack* StackNew() {
-  Stack* s = (Stack*) malloc(sizeof(Stack));
+  Stack* s = (Stack*)malloc(sizeof(Stack));
   if (!s) {
     return NULL;
   }
 
   s->size = 1000;
   s->top = 0;
-  s->data = (Object**) malloc(sizeof(Object*) * s->size);
+  s->data = (Object**)malloc(sizeof(Object*) * s->size);
   if (!s->data) {
     free(s);
     return NULL;
@@ -375,7 +377,7 @@ static void StackDelete(Stack* s) {
 }
 
 static Context* ContextNew(Runtime* rt, StreamType inputType, const char* strOrFileName) {
-  Context* ctx = (Context*) malloc(sizeof(Context));
+  Context* ctx = (Context*)malloc(sizeof(Context));
   if (!ctx) {
     return NULL;
   }
@@ -384,6 +386,8 @@ static Context* ContextNew(Runtime* rt, StreamType inputType, const char* strOrF
   ctx->stack = NULL;
   ctx->error = NULL;
   ctx->unwindActions = NULL;
+  ctx->bytesAllocated = 0;
+  ctx->collectionThreshold = 1024 * 1024;
 
   ctx->environment = EnvironmentNew(rt->environment);
   if (!ctx->environment) {
@@ -450,7 +454,7 @@ static void ClearError(Context* ctx) {
 static void StackPush(Context* ctx, Object* value) {
   if (ctx->stack->top == ctx->stack->size) {
     unsigned int newSize = ctx->stack->size;
-    Object** newData = (Object**) realloc(ctx->stack->data, sizeof(Object*) * newSize);
+    Object** newData = (Object**)realloc(ctx->stack->data, sizeof(Object*) * newSize);
     if (!newData) {
       ThrowError(ctx, (Object*)&eOOM);
     }
@@ -499,7 +503,7 @@ static void ThrowUnexpectedType(Context* ctx) {
 }
 
 static void ThrowOOM(Context* ctx) {
-  ThrowError(ctx, (Object*) &eOOM);
+  ThrowError(ctx, (Object*)&eOOM);
 }
 
 static void ContextPushUnwindAction(Context* ctx, Object* action) {
@@ -518,7 +522,7 @@ static void ContextPushUnwindAction(Context* ctx, Object* action) {
   while (cur->next) {
     cur = cur->next;
   }
-  cur->next = (UnwindList*) calloc(1, sizeof(UnwindList));
+  cur->next = (UnwindList*)calloc(1, sizeof(UnwindList));
   if (!cur->next) {
     ThrowOOM(ctx);
   }
@@ -541,7 +545,7 @@ static unsigned long long alignOffset(unsigned long long offset, unsigned long l
 static void* ObjectGetDataPtr(Object* o) {
   unsigned long long offset = (unsigned long long) &o->data[0];
   unsigned long long dataLocation = alignOffset(offset, o->info.type->alignment);
-  return (void*) dataLocation;
+  return (void*)dataLocation;
 }
 
 static int SymbolP(Object* o) {
@@ -612,7 +616,7 @@ static void ListPrint(Context* ctx) {
     if (l->value->info.type->printFn && l->value->info.type->printFn->isBuiltIn) {
       StackPush(ctx, l->value);
       l->value->info.type->printFn->builtIn(ctx);
-      if (l->next && ListP(l->next) && ((List*) ObjectGetDataPtr(l->next))->value) {
+      if (l->next && ListP(l->next) && ((List*)ObjectGetDataPtr(l->next))->value) {
         fputc(' ', stdout);
       }
     }
@@ -667,9 +671,9 @@ static void ListEval(Context* ctx) {
     }
   }
   if (!first) {
-	  // TODO: Change? This is a weird case. Should use a Nothing type for nil and introduce variant types.
-	  // It is currently impossible to distinguish between "no value" and an intentional nil.
-	  ThrowError(ctx, ErrorNew(ctx, "Cannot apply nil"));
+    // TODO: Change? This is a weird case. Should use a Nothing type for nil and introduce variant types.
+    // It is currently impossible to distinguish between "no value" and an intentional nil.
+    ThrowError(ctx, ErrorNew(ctx, "Cannot apply nil"));
   }
   if (!first->info.type->applyFn) {
     size_t bufsize = strlen(first->info.type->name);
@@ -715,7 +719,7 @@ static void FunctionApply(Context* ctx) {
     ThrowUnexpectedType(ctx);
   }
   Function* f = ObjectGetDataPtr(o);
-  
+
 
 }
 
@@ -864,7 +868,7 @@ static void initBuiltins() {
 }
 
 static Runtime* RuntimeNew(StreamType inputType, const char* strOrFileName) {
-  Runtime* rt = (Runtime*) malloc(sizeof(Runtime));
+  Runtime* rt = (Runtime*)malloc(sizeof(Runtime));
   if (!rt) {
     goto cleanup;
   }
@@ -880,7 +884,7 @@ static Runtime* RuntimeNew(StreamType inputType, const char* strOrFileName) {
     goto cleanup;
   }
 
-  rt->contexts = (Context**) malloc(sizeof(Context*) * rt->contextListSize);
+  rt->contexts = (Context**)malloc(sizeof(Context*) * rt->contextListSize);
   if (!rt->contexts) {
     goto cleanup;
   }
@@ -951,8 +955,8 @@ static int StreamGet(Stream* s) {
 
 // Returns the next token or NULL on end of input.
 static void TokenizerNext(Context* ctx, Tokenizer* tokenizer, const char** token) {
-  const char ws [] = " \n\r\t\v\b\f"; // 7
-  const char delims [] = "()[]{}"; // 6
+  const char ws[] = " \n\r\t\v\b\f"; // 7
+  const char delims[] = "()[]{}"; // 6
 
   if (StreamEnd(tokenizer->stream)) {
     (*token) = NULL;
@@ -996,7 +1000,7 @@ static void TokenizerNext(Context* ctx, Tokenizer* tokenizer, const char** token
 
     if (pos == tokenizer->tokenSize) {
       unsigned int newSize = tokenizer->tokenSize * 2;
-      char* newToken = (char*) realloc(tokenizer->token, newSize);
+      char* newToken = (char*)realloc(tokenizer->token, newSize);
       if (newToken == NULL) {
         (*token) = NULL;
         ThrowOOM(ctx);
@@ -1016,8 +1020,24 @@ end:
   return;
 }
 
+static void ContextCollectGarbage(Context* ctx) {
+  // WIP here
+}
+
 static Object* ObjectAllocRaw(Context* ctx, Type* type) {
-  Object* o = malloc(sizeof(Object) +sizeof(void*) +type->alignment - 1 + type->size);
+  unsigned int allocSize = sizeof(Object) + sizeof(void*) + type->alignment - 1 + type->size;
+  if (ctx->bytesAllocated + allocSize >= ctx->collectionThreshold) {
+    ContextCollectGarbage(ctx);
+    if (ctx->bytesAllocated + allocSize >= ctx->collectionThreshold) {
+      if (allocSize > ctx->collectionThreshold) {
+        ctx->collectionThreshold = allocSize * 2;
+      }
+      else {
+        ctx->collectionThreshold *= 2;
+      }
+    }
+  }
+  Object* o = malloc(allocSize);
   if (!o) {
     ThrowOOM(ctx);
   }
@@ -1026,6 +1046,7 @@ static Object* ObjectAllocRaw(Context* ctx, Type* type) {
   o->info.next = ctx->lastObject;
   o->info.marked = 0;
 
+  ctx->bytesAllocated += allocSize;
   ctx->lastObject = o;
 
   return o;
@@ -1182,10 +1203,10 @@ static Object* EnvironmentBind(Context* ctx, Symbol* name, Object* obj) {
 StaticFunction fTestUnwind;
 
 void testUnwind(Context* ctx) {
-	printf("UNWIND ACTION!\n");
+  printf("UNWIND ACTION!\n");
 }
 
-int main(int argc, char* argv []) {
+int main(int argc, char* argv[]) {
   if (argc < 2) {
     fputs("Give program please.\n", stderr);
     return -1;
@@ -1228,7 +1249,7 @@ jmppoint:;
       Error* e = ObjectGetDataPtr(o);
       fprintf(stderr, "Error: %s\n", e->message);
     }
-	ClearError(ctx);
+    ClearError(ctx);
     goto jmppoint;
   }
 
