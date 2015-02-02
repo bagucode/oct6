@@ -23,6 +23,7 @@ typedef struct sContext Context;
 typedef struct sUnwindList UnwindList;
 typedef struct sEnvironment Environment;
 typedef struct sType Type;
+typedef struct sField Field;
 typedef struct sObjectHeader ObjectHeader;
 typedef struct sObject Object;
 typedef struct sStack Stack;
@@ -52,16 +53,22 @@ struct sObject {
   char data[0];
 };
 
+struct sField {
+  unsigned int offset;
+  char* name;
+  Type* type;
+};
+
 struct sType {
   unsigned int size;
   unsigned int alignment;
   char* name;
+  unsigned int nFields;
+  Field* fields;
   Function* deleteFn;
   Function* printFn;
   Function* evalFn;
   Function* applyFn;
-  unsigned int nFields;
-  Type** fields;
 };
 
 struct sStack {
@@ -1047,8 +1054,8 @@ static void ObjectMark(Object* o) {
     return;
   }
   o->header.marked = 1;
-  Object* field;
-  //o->header.type->
+  Field* field;
+  //o->header.type->fields // have to fix fields!
 }
 
 static void ContextCollectGarbage(Context* ctx) {
