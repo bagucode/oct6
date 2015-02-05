@@ -9,4 +9,4 @@ set(VERSION "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
 
 add_definitions(-DVERSION=${VERSION} -DDEBUG)
 
-add_executable(${PROJECT_NAME} ../common.h ../Object.h ../octarine.c)
+add_executable(${PROJECT_NAME} ../src/common.h ../src/Object.h ../src/octarine.c)
