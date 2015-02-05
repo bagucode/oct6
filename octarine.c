@@ -411,6 +411,7 @@ cleanup:
     EnvironmentDelete(ctx->environment);
     StackDelete(ctx->stack);
     free(ctx->unwindActions);
+    free(ctx);
     ctx = NULL;
   }
 
@@ -459,6 +460,7 @@ static void StackPush(Context* ctx, Object* value) {
     Object** newData = (Object**)realloc(ctx->stack->data, sizeof(Object*) * newSize);
     if (!newData) {
       ThrowOOM(ctx);
+      return; // Not needed, ThrowOOM does longjmp but code analysis does not understand that.
     }
     ctx->stack->size = newSize;
     ctx->stack->data = newData;
