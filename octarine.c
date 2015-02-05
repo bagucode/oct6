@@ -1,21 +1,7 @@
 // Compile debug:   clang -D DEBUG -O0 -g -o octarine octarine.c
 // Compile release: clang -D RELEASE -Ofast -o octarine octarine.c
 
-#ifdef WIN32
-#pragma warning (disable : 4996) // Stop whining about deprecated functions
-#endif
-
-#ifdef _DEBUG
-#define DEBUG
-#elif defined NDEBUG
-#define RELEASE
-#endif
-
-#include <stdio.h>
-#include <stdlib.h>
-#include <string.h>
-#include <assert.h>
-#include <setjmp.h>
+#include "Object.h"
 
 // Runtime types
 typedef struct sRuntime Runtime;
@@ -24,8 +10,6 @@ typedef struct sUnwindList UnwindList;
 typedef struct sEnvironment Environment;
 typedef struct sType Type;
 typedef struct sField Field;
-typedef struct sObjectHeader ObjectHeader;
-typedef struct sObject Object;
 typedef struct sStack Stack;
 typedef void(*BuiltInFn)(Context* ctx);
 typedef struct sStream Stream;
@@ -41,17 +25,6 @@ typedef struct sList List;
 typedef struct sFunction Function;
 
 // Runtime type definitions
-
-struct sObjectHeader {
-  unsigned int marked;
-  Type* type;
-  Object* next;
-};
-
-struct sObject {
-  ObjectHeader header;
-  char data[0];
-};
 
 struct sField {
   unsigned int offset;
