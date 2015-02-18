@@ -3,6 +3,15 @@
 
 #include "Object.h"
 
+// TODO: remove these when migrating code to other files
+// -----
+#include <setjmp.h>
+#include <stdio.h>
+#include <assert.h>
+#include <stdlib.h>
+#include <string.h>
+// ------
+
 // Runtime types
 typedef struct sRuntime Runtime;
 typedef struct sContext Context;
