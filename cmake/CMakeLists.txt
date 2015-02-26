@@ -7,7 +7,11 @@ set(VERSION_MINOR "0")
 set(VERSION_PATCH "1")
 set(VERSION "${VERSION_MAJOR}.${VERSION_MINOR}.${VERSION_PATCH}")
 
-set(LLVM_DIR SET_LLVM_DIR_HERE)
+set(SRC_DIR ../src/)
+
+set(LLVM_DIR "Please set LLVM directory" CACHE PATH "LLVM build or install directory")
+
+file(GLOB SOURCES "${SRC_DIR}*.h" "${SRC_DIR}*.c" "${SRC_DIR}*.cpp")
 
 find_package(LLVM REQUIRED CONFIG)
 
@@ -16,13 +20,9 @@ message(STATUS "Using LLVMConfig.cmake in: ${LLVM_DIR}")
 
 include_directories(${LLVM_INCLUDE_DIRS})
 
-add_definitions(-DVERSION=${VERSION} -DDEBUG ${LLVM_DEFINITIONS})
+add_definitions(-DVERSION=${VERSION} ${LLVM_DEFINITIONS})
 
-add_executable(${PROJECT_NAME} ../src/common.h ../src/Object.h ../src/octarine.c)
-
-cmake_minimum_required(VERSION 2.8.8)
-project(SimpleProject)
-
+add_executable(${PROJECT_NAME} ${SOURCES})
 
 # Set your project compile flags.
 # E.g. if using the C++ header files
@@ -41,3 +41,4 @@ project(SimpleProject)
 
 # Link against LLVM libraries
 # target_link_libraries(simple-tool ${llvm_libs})
+

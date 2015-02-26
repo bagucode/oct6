@@ -1,6 +1,21 @@
 // Compile debug:   clang -D DEBUG -O0 -g -o octarine octarine.c
 // Compile release: clang -D RELEASE -Ofast -o octarine octarine.c
 
+#ifdef _DEBUG
+#undef DEBUG
+#define DEBUG
+#define BUILD_TYPE "debug"
+#else
+#undef RELEASE
+#define RELEASE
+#define BUILD_TYPE "release"
+#endif
+
+#define _xstr(x) #x
+#define _str(x) _xstr(x)
+
+#define PROGNAME "Octarine version " _str(VERSION) " " BUILD_TYPE " build."
+
 #include "Object.h"
 
 // TODO: remove these when migrating code to other files
@@ -1245,13 +1260,7 @@ int main(int argc, char* argv[]) {
     return -1;
   }
 
-#ifdef DEBUG
-  puts("octarine 0.0.1, debug build");
-#elif defined RELEASE
-  puts("octarine 0.0.1, release build");
-#else
-#error Must define DEBUG or RELEASE
-#endif
+  printf(PROGNAME "\n\n");
 
   Context* ctx = rt->currentContext;
   Reader* r = ctx->reader;
