@@ -3,20 +3,14 @@
 
 #include "Common.h"
 
-struct sType;
+struct sVTable;
 
-typedef struct sObjectHeader ObjectHeader;
 typedef struct sObject Object;
 
-struct sObjectHeader {
-  Bool marked;
-  struct sType* type;
-  Object* next;
-};
-
+// "Fat pointer" for runtime polymorphism
 struct sObject {
-  ObjectHeader header;
-  Address data[0];
+  struct sVTable* vtable;
+  Address object;
 };
 
 #endif
