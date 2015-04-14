@@ -5,12 +5,19 @@
 
 namespace octarine {
 
-  class VTable;
+  class InstanceInfo;
 
-  // "Fat pointer" for runtime polymorphism
   class Object {
-    struct sVTable* vtable;
-    Address object;
+  private:
+    const InstanceInfo* mInstanceInfo;
+    const Address mInstance;
+
+  public:
+    explicit Object(InstanceInfo* vTable, Address address);
+    ~Object();
+
+    const InstanceInfo* getInstanceInfo() const;
+    const Address getAddress() const;
   };
 
 }
