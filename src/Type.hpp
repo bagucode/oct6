@@ -9,11 +9,16 @@ using std::string;
 
 namespace octarine {
 
+  class FieldArray;
+
   class Type {
   private:
     string mName;
-    // FieldArray?
+    FieldArray* mFields;
+
   public:
+    explicit Type(string name, FieldArray* fields);
+
   };
 
 }
