@@ -18,7 +18,10 @@ namespace octarine {
 
   public:
     explicit Type(string name, FieldArray* fields);
+    ~Type();
 
+    string getName();
+    FieldArray* getFields();
   };
 
 }
