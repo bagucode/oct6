@@ -1,5 +1,5 @@
-#ifndef COMMON_H
-#define COMMON_H
+#ifndef COMMON_HPP
+#define COMMON_HPP
 
 #ifdef _DEBUG
 # ifndef DEBUG
@@ -31,32 +31,38 @@ typedef unsigned __int64 uint64_t;
 # define OCT32
 #endif
 
-typedef int8_t   I8;
-typedef uint8_t  U8;
-typedef int16_t  I16;
-typedef uint16_t U16;
-typedef int32_t  I32;
-typedef uint32_t U32;
-typedef int64_t  I64;
-typedef uint64_t U64;
-typedef float    F32;
-typedef double   F64;
+// Octarine types
+
+namespace octarine {
+
+  typedef int8_t   I8;
+  typedef uint8_t  U8;
+  typedef int16_t  I16;
+  typedef uint16_t U16;
+  typedef int32_t  I32;
+  typedef uint32_t U32;
+  typedef int64_t  I64;
+  typedef uint64_t U64;
+  typedef float    F32;
+  typedef double   F64;
 
 #ifdef OCT64
-typedef int64_t  Word;
-typedef uint64_t Uword;
+  typedef int64_t  Word;
+  typedef uint64_t Uword;
 #else
-typedef int32_t  Word;
-typedef uint32_t Uword;
+  typedef int32_t  Word;
+  typedef uint32_t Uword;
 #endif
 
-typedef void* Address;
+  typedef void* Address;
 
-typedef I8 Bool;
+  typedef I8 Bool;
 #define True 1
 #define False 0
 
-typedef int32_t Char;
+  typedef int32_t Char;
+
+} // namespace octarine
 
 #ifndef NULL
 # define NULL 0

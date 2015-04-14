@@ -11,7 +11,7 @@ set(SRC_DIR ../src/)
 
 set(LLVM_DIR "Please set LLVM directory" CACHE PATH "LLVM build or install directory")
 
-file(GLOB SOURCES "${SRC_DIR}*.h" "${SRC_DIR}*.c" "${SRC_DIR}*.cpp")
+file(GLOB SOURCES "${SRC_DIR}*.h" "${SRC_DIR}*.hpp" "${SRC_DIR}*.c" "${SRC_DIR}*.cpp")
 
 find_package(LLVM REQUIRED CONFIG)
 
@@ -22,7 +22,7 @@ include_directories(${LLVM_INCLUDE_DIRS})
 
 add_definitions(-DVERSION=${VERSION} ${LLVM_DEFINITIONS})
 
-add_executable(${PROJECT_NAME} ${SOURCES})
+add_executable(octarine ${SOURCES})
 
 # Set your project compile flags.
 # E.g. if using the C++ header files
